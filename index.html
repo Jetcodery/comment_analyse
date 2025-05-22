@@ -185,12 +185,6 @@
             color: #fff !important;
         }
 
-        /* 隐藏初始状态下的表格 */
-        #detail-table-container {
-            display: none;
-            margin-top: 2rem;
-        }
-
         /* CSV上传区域样式 */
         .csv-upload-container {
             border: 2px dashed #444;
@@ -215,6 +209,60 @@
             padding: 10px !important;
             color: white !important;
         }
+
+        /* 弹出窗口样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.8);
+        }
+
+        .modal-content {
+            background-color: #1a1a1a;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 1rem;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .close-modal {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close-modal:hover,
+        .close-modal:focus {
+            color: #FF6900;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .csv-info {
+            background-color: rgba(34, 34, 34, 0.8);
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        .csv-info-title {
+            font-weight: bold;
+            color: #FF6900;
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
@@ -234,25 +282,39 @@
         </div>
     </div>
 
+    <!-- CSV信息展示 -->
+    <div id="csv-info-container" class="text-center mb-4" style="display: none;">
+        <div class="csv-info">
+            <span class="csv-info-title">文件名:</span>
+            <span id="csv-filename">-</span>
+        </div>
+        <div class="csv-info ml-4">
+            <span class="csv-info-title">关键词数量:</span>
+            <span id="csv-keywords-count">-</span>
+        </div>
+    </div>
+
     <!-- Tab导航 -->
-    <div class="tab-container animate-on-scroll" id="tab-container">
-        <!-- Tab会根据上传的CSV文件动态生成 -->
+    <div class="tab-container animate-on-scroll" id="tab-container" style="display: none;">
+        <!-- Tab会根据关键词动态生成 -->
     </div>
 
     <!-- Tab内容区域 -->
     <div id="tab-content-container">
-        <!-- Tab内容会根据上传的CSV文件动态生成 -->
+        <!-- Tab内容会根据关键词动态生成 -->
     </div>
 
-    <!-- 数据明细表格 -->
-    <div class="main-card p-6 animate-on-scroll" id="detail-table-container">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-3xl font-bold"><i class="fas fa-table mr-2 highlight"></i>数据明细</h2>
-            <button id="close-table" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded">
-                <i class="fas fa-times mr-2"></i>关闭
-            </button>
+    <!-- 数据详情弹窗 -->
+    <div id="detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-3xl font-bold" id="modal-title"><i class="fas fa-table mr-2 highlight"></i>数据明细</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table id="detail-table" class="display" style="width:100%"></table>
+            </div>
         </div>
-        <table id="detail-table" class="display" style="width:100%"></table>
     </div>
 
     <!-- 重置图表按钮 -->
@@ -271,6 +333,23 @@
         let allDataSets = {};
         let currentTabId = null;
         let charts = {};
+        let currentFileName = "";
+
+        // 定义不同一级分类的颜色系列
+        const categoryColorPalettes = [
+            ['#FF6347', '#FF7F50', '#FF9966', '#FFBF80', '#FFD9B3'], // 橙红色系
+            ['#4CAF50', '#66BB6A', '#81C784', '#A5D6A7', '#C8E6C9'], // 绿色系
+            ['#2196F3', '#42A5F5', '#64B5F6', '#90CAF9', '#BBDEFB'], // 蓝色系
+            ['#9C27B0', '#AB47BC', '#BA68C8', '#CE93D8', '#E1BEE7'], // 紫色系
+            ['#FF9800', '#FFA726', '#FFB74D', '#FFCC80', '#FFE0B2'], // 橙色系
+            ['#00BCD4', '#26C6DA', '#4DD0E1', '#80DEEA', '#B2EBF2'], // 青色系
+            ['#E91E63', '#EC407A', '#F06292', '#F48FB1', '#F8BBD0'], // 粉红色系
+            ['#795548', '#8D6E63', '#A1887F', '#BCAAA4', '#D7CCC8'], // 棕色系
+            ['#607D8B', '#78909C', '#90A4AE', '#B0BEC5', '#CFD8DC'], // 蓝灰色系
+            ['#FFC107', '#FFCD38', '#FFD54F', '#FFE082', '#FFECB3'], // 黄色系
+             ['#8BC34A', '#9CCC65', '#AEEA00', '#C5E1A5', '#DCEDC8'], // 浅绿色系
+             ['#FF5722', '#FF7043', '#FF8A65', '#FFAB91', '#FFCCBC']  // 深橙色系
+        ];
 
         // CSV文件上传处理
         document.querySelector('.csv-upload-container').addEventListener('click', function() {
@@ -279,130 +358,184 @@
 
         document.getElementById('csv-file-input').addEventListener('change', handleFileUpload);
 
+        // 关闭详情弹窗
+        document.querySelector('.close-modal').addEventListener('click', function() {
+            document.getElementById('detail-modal').style.display = 'none';
+        });
+
+        // 点击弹窗外部关闭弹窗
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('detail-modal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+
         function handleFileUpload(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
 
-            // 隐藏上传区域
-            document.getElementById('csv-upload').style.display = 'none';
+            // 清空现有数据和Tab
+            allDataSets = {};
+            document.getElementById('tab-container').innerHTML = '';
+            document.getElementById('tab-content-container').innerHTML = '';
 
-            // 显示重置图表按钮
-            document.getElementById('resize-charts-container').style.display = 'block';
+            // 只处理一个文件，取第一个
+            const file = files[0];
+            currentFileName = file.name;
 
-            // 处理每个CSV文件
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                const reader = new FileReader();
+            // 更新文件信息显示
+            document.getElementById('csv-filename').textContent = file.name;
 
-                reader.onload = function(e) {
-                    // 使用PapaParse解析CSV
-                    Papa.parse(e.target.result, {
-                        header: true,
-                        dynamicTyping: true,
-                        complete: function(results) {
-                            const fileName = file.name.replace('.csv', '');
-                            allDataSets[fileName] = results.data;
+            const reader = new FileReader();
 
-                            // 创建Tab
-                            createTab(fileName);
+            reader.onload = function(e) {
+                // 使用PapaParse解析CSV
+                Papa.parse(e.target.result, {
+                    header: true,
+                    dynamicTyping: true,
+                    complete: function(results) {
+                        // 隐藏上传区域
+                        document.getElementById('csv-upload').style.display = 'none';
 
-                            // 如果是第一个文件，默认显示它
-                            if (i === 0) {
-                                activateTab(fileName);
-                            }
-                        },
-                        error: function(error) {
-                            console.error('CSV解析错误:', error);
-                            alert('CSV文件解析失败，请检查文件格式。');
+                        // 显示重置图表按钮和CSV信息
+                        document.getElementById('resize-charts-container').style.display = 'block';
+                        document.getElementById('csv-info-container').style.display = 'block';
+                        document.getElementById('tab-container').style.display = 'flex';
+
+                        // 根据关键词分组数据
+                        const groupedData = groupDataByKeyword(results.data);
+
+                        // 更新关键词数量显示
+                        document.getElementById('csv-keywords-count').textContent = Object.keys(groupedData).length;
+
+                        // 为每个关键词创建Tab页
+                        createTabsForKeywords(groupedData);
+
+                        // 默认激活第一个Tab
+                        const firstKeyword = Object.keys(groupedData)[0];
+                        if (firstKeyword) {
+                            activateTab(firstKeyword);
                         }
-                    });
-                };
+                    },
+                    error: function(error) {
+                        console.error('CSV解析错误:', error);
+                        alert('CSV文件解析失败，请检查文件格式。');
+                    }
+                });
+            };
 
-                reader.readAsText(file);
-            }
+            reader.readAsText(file);
         }
 
-        // 创建Tab
-        function createTab(tabId) {
-            // 创建Tab按钮
-            const tabContainer = document.getElementById('tab-container');
-            const tab = document.createElement('div');
-            tab.className = 'tab';
-            tab.textContent = tabId;
-            tab.dataset.tabId = tabId;
-            tab.addEventListener('click', function() {
-                activateTab(tabId);
+        // 根据关键词分组数据
+        function groupDataByKeyword(data) {
+            const groupedData = {};
+
+            data.forEach(item => {
+                // 检查 item["关键词"] 是否存在且为非空字符串
+                if (item && typeof item["关键词"] === 'string' && item["关键词"].trim() !== '') {
+                    const keyword = item["关键词"].trim();
+
+                    if (!groupedData[keyword]) {
+                        groupedData[keyword] = [];
+                    }
+
+                    groupedData[keyword].push(item);
+                }
             });
-            tabContainer.appendChild(tab);
 
-            // 创建Tab内容区域
+            return groupedData;
+        }
+
+        // 为每个关键词创建Tab页
+        function createTabsForKeywords(groupedData) {
+            const tabContainer = document.getElementById('tab-container');
             const tabContentContainer = document.getElementById('tab-content-container');
-            const tabContent = document.createElement('div');
-            tabContent.className = 'tab-content';
-            tabContent.id = `content-${tabId}`;
 
-            // 添加Tab内容模板
-            tabContent.innerHTML = `
-                <section class="main-card p-6 animate-on-scroll">
-                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-tachometer-alt mr-2 highlight"></i>数据概览</h2>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mini-card-grid">
-                        <div class="mini-card p-4 animate-on-scroll">
-                            <div class="text-5xl font-bold highlight mb-2" id="keyword-${tabId}">-</div>
-                            <div class="text-sm text-gray-400">关键词</div>
-                            <div class="text-xs text-gray-500">Keyword</div>
+            // 为每个关键词创建Tab和内容
+            Object.keys(groupedData).forEach(keyword => {
+                // 创建Tab按钮
+                const tab = document.createElement('div');
+                tab.className = 'tab';
+                tab.textContent = keyword;
+                tab.dataset.tabId = keyword;
+                tab.addEventListener('click', function() {
+                    activateTab(keyword);
+                });
+                tabContainer.appendChild(tab);
+
+                // 保存关键词的数据
+                allDataSets[keyword] = groupedData[keyword];
+
+                // 创建Tab内容区域
+                const tabContent = document.createElement('div');
+                tabContent.className = 'tab-content';
+                tabContent.id = `content-${keyword}`;
+
+                // 添加Tab内容模板
+                tabContent.innerHTML = `
+                    <section class="main-card p-6 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-tachometer-alt mr-2 highlight"></i>数据概览</h2>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mini-card-grid">
+                            <div class="mini-card p-4 animate-on-scroll">
+                                <div class="text-5xl font-bold highlight mb-2" id="keyword-${keyword}">-</div>
+                                <div class="text-sm text-gray-400">关键词</div>
+                                <div class="text-xs text-gray-500">Keyword</div>
+                            </div>
+                            <div class="mini-card p-4 animate-on-scroll">
+                                <div class="text-5xl font-bold highlight mb-2" id="total-comments-${keyword}">-</div>
+                                <div class="text-sm text-gray-400">评论总数</div>
+                                <div class="text-xs text-gray-500">Total Comments</div>
+                            </div>
+                            <div class="mini-card p-4 animate-on-scroll">
+                                <div class="text-5xl font-bold highlight mb-2" id="positive-ratio-${keyword}">-%</div>
+                                <div class="text-sm text-gray-400">正向评论占比</div>
+                                <div class="text-xs text-gray-500">Positive Comments</div>
+                            </div>
+                            <div class="mini-card p-4 animate-on-scroll">
+                                <div class="text-5xl font-bold highlight mb-2" id="avg-likes-${keyword}">-</div>
+                                <div class="text-sm text-gray-400">平均评论点赞数</div>
+                                <div class="text-xs text-gray-500">Average Likes</div>
+                            </div>
                         </div>
-                        <div class="mini-card p-4 animate-on-scroll">
-                            <div class="text-5xl font-bold highlight mb-2" id="total-comments-${tabId}">-</div>
-                            <div class="text-sm text-gray-400">评论总数</div>
-                            <div class="text-xs text-gray-500">Total Comments</div>
-                        </div>
-                        <div class="mini-card p-4 animate-on-scroll">
-                            <div class="text-5xl font-bold highlight mb-2" id="positive-ratio-${tabId}">-%</div>
-                            <div class="text-sm text-gray-400">正向评论占比</div>
-                            <div class="text-xs text-gray-500">Positive Comments</div>
-                        </div>
-                        <div class="mini-card p-4 animate-on-scroll">
-                            <div class="text-5xl font-bold highlight mb-2" id="avg-likes-${tabId}">-</div>
-                            <div class="text-sm text-gray-400">平均评论点赞数</div>
-                            <div class="text-xs text-gray-500">Average Likes</div>
-                        </div>
+                    </section>
+
+                    <section class="main-card p-6 mt-8 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-layer-group mr-2 highlight"></i>一级分类与二级分类占比</h2>
+                        <div class="sunburst-container" id="category-sunburst-${keyword}"></div>
+                    </section>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                        <section class="main-card p-6 animate-on-scroll">
+                            <h2 class="text-3xl font-bold mb-6"><i class="fas fa-thumbs-up mr-2 highlight"></i>评论正负向分析</h2>
+                            <div class="chart-container px-4 py-2" id="sentiment-pie-${keyword}"></div>
+                        </section>
+
+                        <section class="main-card p-6 animate-on-scroll">
+                            <h2 class="text-3xl font-bold mb-6"><i class="fas fa-users mr-2 highlight"></i>用户倾向分布</h2>
+                            <div class="chart-container px-4 py-2" id="user-tendency-pie-${keyword}"></div>
+                        </section>
                     </div>
-                </section>
 
-                <section class="main-card p-6 mt-8 animate-on-scroll">
-                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-layer-group mr-2 highlight"></i>一级分类与二级分类占比</h2>
-                    <div class="sunburst-container" id="category-sunburst-${tabId}"></div>
-                </section>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-                    <section class="main-card p-6 animate-on-scroll">
-                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-thumbs-up mr-2 highlight"></i>评论正负向分析</h2>
-                        <div class="chart-container px-4 py-2" id="sentiment-pie-${tabId}"></div>
+                    <section class="main-card p-6 mt-8 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-cloud mr-2 highlight"></i>评论关键词词云</h2>
+                        <div class="chart-container" id="comment-wordcloud-${keyword}"></div>
                     </section>
 
-                    <section class="main-card p-6 animate-on-scroll">
-                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-users mr-2 highlight"></i>用户倾向分布</h2>
-                        <div class="chart-container px-4 py-2" id="user-tendency-pie-${tabId}"></div>
+                    <section class="main-card p-6 mt-8 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-clock mr-2 highlight"></i>评论时间分布</h2>
+                        <div class="chart-container" id="time-heatmap-${keyword}"></div>
                     </section>
-                </div>
 
-                <section class="main-card p-6 mt-8 animate-on-scroll">
-                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-cloud mr-2 highlight"></i>评论关键词词云</h2>
-                    <div class="chart-container" id="comment-wordcloud-${tabId}"></div>
-                </section>
+                    <section class="main-card p-6 mt-8 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-heart mr-2 highlight"></i>评论点赞数分析</h2>
+                        <div class="chart-container" id="likes-chart-${keyword}"></div>
+                    </section>
+                `;
 
-                <section class="main-card p-6 mt-8 animate-on-scroll">
-                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-clock mr-2 highlight"></i>评论时间分布</h2>
-                    <div class="chart-container" id="time-heatmap-${tabId}"></div>
-                </section>
-
-                <section class="main-card p-6 mt-8 animate-on-scroll">
-                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-heart mr-2 highlight"></i>评论点赞数分析</h2>
-                    <div class="chart-container" id="likes-chart-${tabId}"></div>
-                </section>
-            `;
-
-            tabContentContainer.appendChild(tabContent);
+                tabContentContainer.appendChild(tabContent);
+            });
         }
 
         // 激活Tab
@@ -452,17 +585,16 @@
             const totalComments = data.length;
             document.getElementById(`total-comments-${tabId}`).textContent = totalComments;
 
-            // 展示关键词
-            const keyword = data[0]?.["关键词"] || "-";
-            document.getElementById(`keyword-${tabId}`).textContent = keyword.length > 8 ?
-                keyword.substring(0, 8) + "..." : keyword;
-            document.getElementById(`keyword-${tabId}`).title = keyword;
+            // 展示关键词 (TabId就是关键词)
+            document.getElementById(`keyword-${tabId}`).textContent = tabId.length > 8 ?
+                tabId.substring(0, 8) + "..." : tabId;
+            document.getElementById(`keyword-${tabId}`).title = tabId;
 
             // 计算正向评论比例
             const positiveComments = data.filter(item =>
                 item["评论正负向"] && item["评论正负向"] === "正向"
             ).length;
-            const positiveRatio = (positiveComments / totalComments * 100).toFixed(1);
+            const positiveRatio = (totalComments > 0) ? (positiveComments / totalComments * 100).toFixed(1) : '0.0';
             document.getElementById(`positive-ratio-${tabId}`).textContent = positiveRatio + "%";
 
             // 计算平均点赞数
@@ -470,7 +602,7 @@
                 const likes = parseInt(item["评论点赞数"] || 0);
                 return sum + (isNaN(likes) ? 0 : likes);
             }, 0);
-            const avgLikes = (totalLikes / totalComments).toFixed(1);
+            const avgLikes = (totalComments > 0) ? (totalLikes / totalComments).toFixed(1) : '0.0';
             document.getElementById(`avg-likes-${tabId}`).textContent = avgLikes;
 
             // 更新更新时间
@@ -518,35 +650,49 @@
                 categoryMap[level1][level2].items.push(item);
             });
 
-            // 转换为旭日图数据格式
-            const result = {
-                name: '分类',
-                children: []
-            };
+            // 构建旭日图的层级数据结构
+            const children = [];
+            const level1Categories = Object.keys(categoryMap);
 
-            for (const [level1, level2Map] of Object.entries(categoryMap)) {
+            level1Categories.forEach((level1, level1Index) => {
+                const level2Map = categoryMap[level1];
+
+                // 获取当前一级分类对应的颜色系列
+                const colorPalette = categoryColorPalettes[level1Index % categoryColorPalettes.length];
+
+                // 创建一级分类节点
                 const level1Node = {
                     name: level1,
-                    value: Object.values(level2Map).reduce((sum, info) => sum + info.count, 0),
+                    itemStyle: {
+                        color: colorPalette[0] // 使用系列第一个颜色作为一级分类颜色
+                    },
                     children: []
                 };
 
-                for (const [level2, info] of Object.entries(level2Map)) {
+                // 添加所有二级分类
+                Object.entries(level2Map).forEach(([level2, info], level2Index) => {
+                    // 使用系列后续颜色作为二级分类颜色，循环使用
+                    const level2Color = colorPalette[(level2Index + 1) % colorPalette.length];
+
                     level1Node.children.push({
                         name: level2,
                         value: info.count,
-                        itemData: info.items, // 存储对应的原始数据
-                        fullName: level2 // 存储完整名称，用于工具提示
+                        itemStyle: {
+                            color: level2Color
+                        },
+                        itemData: info.items // 保存原始数据用于点击事件
                     });
-                }
+                });
 
-                result.children.push(level1Node);
-            }
+                children.push(level1Node);
+            });
 
-            return result;
+            // 添加中心圆的根节点 (可选，ECharts会自动添加一个隐式的根节点)
+            // return { name: '分类', children: children };
+            return { children: children }; // 直接返回children数组更常用
         }
 
-        // 准备正负向饼图数据
+        // 准备正负向饼图数据 (保持不变)
         function prepareSentimentPieData(data) {
             const sentimentCount = {};
             const sentimentItems = {};
@@ -570,7 +716,7 @@
             }));
         }
 
-        // 准备用户倾向饼图数据
+        // 准备用户倾向饼图数据 (保持不变)
         function prepareUserTendencyPieData(data) {
             const tendencyCount = {};
             const tendencyItems = {};
@@ -594,7 +740,7 @@
             }));
         }
 
-        // 准备词云数据
+        // 准备词云数据 (保持不变)
         function prepareWordcloudData(data) {
             // 合并所有评论内容
             let allComments = data.map(item => item["评论内容"] || "").join(" ");
@@ -634,7 +780,7 @@
                 .slice(0, 100); // 只取前100个词
         }
 
-        // 准备时间热力图数据
+        // 准备时间热力图数据 (保持不变)
         function prepareTimeHeatmapData(data) {
             const hourCount = Array(24).fill(0);
             const hourItems = Array(24).fill().map(() => []);
@@ -662,7 +808,7 @@
             ]);
         }
 
-        // 准备点赞数分布图数据
+        // 准备点赞数分布图数据 (保持不变)
         function prepareLikesChartData(data) {
             const likesDistribution = {};
             const likesItems = {};
@@ -711,77 +857,75 @@
 
             // 初始化一级分类与二级分类旭日图
             const categorySunburstChart = echarts.init(document.getElementById(`category-sunburst-${tabId}`));
+
             categorySunburstChart.setOption({
                 backgroundColor: 'transparent',
                 tooltip: {
                     trigger: 'item',
-                    formatter: function(params) {
-                        // 显示完整类别名称和数量
-                        const name = params.data.fullName || params.name;
-                        const percent = params.percent ? params.percent.toFixed(1) + '%' : '';
-                        return `${name}<br/>数量: ${params.value} (${percent})`;
+                    formatter: function (params) {
+                         const name = params.data.fullName || params.name;
+                         const value = params.value;
+                         const percent = params.percent ? params.percent.toFixed(1) + '%' : '';
+                         return `${name}<br/>数量: ${value} ${percent ? `(${percent})` : ''}`;
                     },
                     confine: true, // 限制在图表区域内
                     className: 'echarts-tooltip'
                 },
-                series: {
+                series: [{
                     type: 'sunburst',
-                    data: [chartData.categorySunburstData],
-                    radius: ['15%', '95%'], // 调整半径范围，提供更多空间
-                    itemStyle: {
-                        borderWidth: 1,
-                        borderColor: 'rgba(255, 255, 255, 0.3)'
-                    },
+                    radius: ['20%', '90%'],
+                    data: chartData.categorySunburstData.children, // 直接使用children数组
                     label: {
-                        // 调整标签显示
+                        rotate: 'radial',
                         color: '#fff',
-                        textBorderColor: 'rgba(0, 0, 0, 0.5)',
+                        fontSize: 12,
+                        textBorderColor: 'rgba(0, 0, 0, 0.8)',
                         textBorderWidth: 2,
-                        formatter: function(param) {
-                            // 截断长文本
-                            return truncateText(param.name, 6);
+                        formatter: function (param) {
+                            return param.name.length > 6 ? param.name.slice(0, 6) + '...' : param.name;
                         },
-                        rotate: 'radial', // 径向旋转标签
-                        minAngle: 9 // 只在角度大于9度时显示标签
+                        minAngle: 5 // 确保足够小的区域也能显示标签
                     },
-                    levels: [{}, {
-                        // 第一层 - 一级分类
-                        r0: '15%',
-                        r: '45%',
+                    itemStyle: {
+                        borderColor: '#000',
+                        borderWidth: 1
+                    },
+                    emphasis: {
                         itemStyle: {
-                            color: '#FF6900'
-                        },
-                        label: {
-                            rotate: 'tangential' // 内圈使用切向旋转
+                            shadowBlur: 10,
+                            shadowOffsetX: 0,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
                         }
-                    }, {
-                        // 第二层 - 二级分类
-                        r0: '45%',
-                        r: '95%',
-                        itemStyle: {
-                            color: function(params) {
-                                // 对二级分类使用不同色调
-                                const colors = ['#FF8A3C', '#FFA064', '#FFB080', '#FFC099', '#FFCFB2'];
-                                return colors[params.dataIndex % colors.length];
-                            }
-                        },
-                        label: {
-                            align: 'left',
-                            fontSize: 12,
-                            minAngle: 10 // 只有在足够大的扇区才显示标签
-                        }
-                    }]
-                }
+                    },
+                     levels: [{}, {
+                         // 第一层（一级分类）的label配置
+                         r0: '20%',
+                         r: '45%',
+                         label: {
+                             align: 'center',
+                             minAngle: 10 // 确保一级分类标签在足够大的区域显示
+                         }
+                     }, {
+                         // 第二层（二级分类）的label配置
+                         r0: '45%',
+                         r: '90%',
+                         label: {
+                             align: 'right',
+                             minAngle: 5 // 确保二级分类标签在足够大的区域显示
+                         }
+                     }]
+                }]
             });
 
             // 点击事件
             categorySunburstChart.on('click', function(params) {
+                // 只有点击带有itemData（即叶子节点，二级分类）的区域才弹出表格
                 if (params.data.itemData) {
-                    showDetailTable(params.data.itemData, `${params.name} 分类数据`);
+                    showDetailModal(params.data.itemData, `${params.name} 分类数据`);
                 }
             });
 
-            // 初始化评论正负向饼图
+            // 初始化评论正负向饼图 (保持不变)
             const sentimentPieChart = echarts.init(document.getElementById(`sentiment-pie-${tabId}`));
             sentimentPieChart.setOption({
                 backgroundColor: 'transparent',
@@ -848,11 +992,11 @@
             // 点击事件
             sentimentPieChart.on('click', function(params) {
                 if (params.data.itemData) {
-                    showDetailTable(params.data.itemData, `${params.name} 评论数据`);
+                    showDetailModal(params.data.itemData, `${params.name} 评论数据`);
                 }
             });
 
-            // 初始化用户倾向饼图
+            // 初始化用户倾向饼图 (保持不变)
             const userTendencyPieChart = echarts.init(document.getElementById(`user-tendency-pie-${tabId}`));
             userTendencyPieChart.setOption({
                 backgroundColor: 'transparent',
@@ -921,11 +1065,11 @@
             // 点击事件
             userTendencyPieChart.on('click', function(params) {
                 if (params.data.itemData) {
-                    showDetailTable(params.data.itemData, `${params.name} 倾向数据`);
+                    showDetailModal(params.data.itemData, `${params.name} 倾向数据`);
                 }
             });
 
-            // 初始化评论词云
+            // 初始化评论词云 (保持不变)
             const commentWordcloudChart = echarts.init(document.getElementById(`comment-wordcloud-${tabId}`));
             commentWordcloudChart.setOption({
                 backgroundColor: 'transparent',
@@ -973,7 +1117,7 @@
                 }]
             });
 
-            // 初始化评论时间热力图
+            // 初始化评论时间热力图 (保持不变)
             const timeHeatmapChart = echarts.init(document.getElementById(`time-heatmap-${tabId}`));
             const hours = [...Array(24).keys()].map(i => i + '时');
 
@@ -1058,11 +1202,11 @@
                 const index = params.value[0];
                 const itemData = chartData.timeHeatmapData[index][3]; // 获取保存的原始数据
                 if (itemData && itemData.length) {
-                    showDetailTable(itemData, `${index}时 评论数据`);
+                    showDetailModal(itemData, `${index}时 评论数据`);
                 }
             });
 
-            // 初始化点赞数分布图
+            // 初始化点赞数分布图 (保持不变)
             const likesChart = echarts.init(document.getElementById(`likes-chart-${tabId}`));
             likesChart.setOption({
                 backgroundColor: 'transparent',
@@ -1139,7 +1283,7 @@
             // 点击事件
             likesChart.on('click', function(params) {
                 if (params.data.itemData) {
-                    showDetailTable(params.data.itemData, `${params.data.name}点赞 评论数据`);
+                    showDetailModal(params.data.itemData, `${params.data.name}点赞 评论数据`);
                 }
             });
 
@@ -1154,17 +1298,14 @@
             };
         }
 
-        // 显示数据明细表格
-        function showDetailTable(data, title) {
-            const tableContainer = document.getElementById('detail-table-container');
-            const tableTitle = tableContainer.querySelector('h2');
-            tableTitle.innerHTML = `<i class="fas fa-table mr-2 highlight"></i>${title}`;
+        // 显示数据详情弹窗
+        function showDetailModal(data, title) {
+            const modal = document.getElementById('detail-modal');
+            const modalTitle = document.getElementById('modal-title');
+            modalTitle.innerHTML = `<i class="fas fa-table mr-2 highlight"></i>${title}`;
 
-            // 显示表格容器
-            tableContainer.style.display = 'block';
-
-            // 滚动到表格位置
-            tableContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // 显示弹窗
+            modal.style.display = 'block';
 
             // 如果已存在表格实例，先销毁
             if ($.fn.DataTable.isDataTable('#detail-table')) {
@@ -1178,13 +1319,22 @@
                 const keyCols = ["评论内容", "评论正负向", "用户倾向", "一级分类", "二级分类", "评论时间", "评论点赞数", "评论用户"];
 
                 keyCols.forEach(col => {
-                    if (data[0][col] !== undefined) {
+                    if (data[0].hasOwnProperty(col)) { // 使用 hasOwnProperty 更安全
                         columns.push({
                             title: col,
                             data: col
                         });
                     }
                 });
+                 // 如果没有找到任何列，给一个默认列
+                if (columns.length === 0) {
+                     Object.keys(data[0]).forEach(col => {
+                         columns.push({
+                             title: col,
+                             data: col
+                         });
+                     });
+                }
             }
 
             // 初始化DataTable
@@ -1221,11 +1371,6 @@
                 order: [] // 不进行默认排序
             });
         }
-
-        // 关闭详情表格
-        document.getElementById('close-table').addEventListener('click', function() {
-            document.getElementById('detail-table-container').style.display = 'none';
-        });
 
         // 重置图表大小按钮
         document.getElementById('resize-charts').addEventListener('click', function() {
