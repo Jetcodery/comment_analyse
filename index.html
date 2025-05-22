@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书评论区分析工具</title>
+
+    <!-- 引入TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 引入ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+
+    <!-- 引入PapaParse用于CSV解析 -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <!-- 引入nodejieba分词 -->
+    <script src="https://cdn.jsdelivr.net/npm/nodejieba@2.6.0/dist/nodejieba.js"></script>
+
+    <!-- 引入DataTables用于表格展示 -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+    <!-- 引入Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <style>
+        body {
+            background-color: #000000;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        .main-card {
+            background-color: #1a1a1a;
+            border-radius: 1rem;
+            border: 1px solid #333;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+        }
+
+        .mini-card {
+            background-color: #222222;
+            border-radius: 0.75rem;
+            border: 1px solid #333;
+            transition: all 0.3s ease;
+        }
+
+        .mini-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(255, 105, 0, 0.2);
+        }
+
+        .highlight {
+            color: #FF6900; /* 小红书主色 */
+        }
+
+        .chart-container {
+            height: 500px; /* 增加高度 */
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* 特别为旭日图增加高度 */
+        .sunburst-container {
+            height: 600px; /* 更大的高度给旭日图 */
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .animate-on-scroll {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .animate-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* 为迷你卡片创建交错动画 */
+        .mini-card-grid .mini-card:nth-child(1) { transition-delay: 0.1s; }
+        .mini-card-grid .mini-card:nth-child(2) { transition-delay: 0.15s; }
+        .mini-card-grid .mini-card:nth-child(3) { transition-delay: 0.2s; }
+        .mini-card-grid .mini-card:nth-child(4) { transition-delay: 0.25s; }
+        .mini-card-grid .mini-card:nth-child(5) { transition-delay: 0.3s; }
+        .mini-card-grid .mini-card:nth-child(6) { transition-delay: 0.35s; }
+
+        /* 科技感渐变 */
+        .tech-gradient {
+            background: linear-gradient(135deg, rgba(255, 105, 0, 0.7), rgba(255, 105, 0, 0.3));
+        }
+
+        /* Tab样式 */
+        .tab-container {
+            display: flex;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #333 #000;
+            margin-bottom: 1rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            margin-right: 0.5rem;
+            background-color: #222222;
+            border-radius: 0.5rem 0.5rem 0 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .tab:hover {
+            background-color: #333333;
+        }
+
+        .tab.active {
+            background-color: #FF6900;
+            color: #ffffff;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 导入CSV按钮样式 */
+        .upload-btn {
+            padding: 0.75rem 1.5rem;
+            background-color: #FF6900;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-block;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .upload-btn:hover {
+            background-color: #E05800;
+        }
+
+        /* 数据表格样式 */
+        .dataTables_wrapper {
+            background-color: #222222;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        table.dataTable {
+            color: #fff;
+            border-collapse: collapse;
+        }
+
+        table.dataTable thead th, table.dataTable tbody td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #333;
+        }
+
+        table.dataTable thead th {
+            background-color: #2d2d2d;
+        }
+
+        .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_paginate {
+            color: #ccc !important;
+            margin: 0.5rem 0;
+        }
+
+        .dataTables_paginate .paginate_button {
+            color: #ccc !important;
+        }
+
+        .dataTables_paginate .paginate_button.current {
+            background: #FF6900 !important;
+            border-color: #FF6900 !important;
+            color: #fff !important;
+        }
+
+        /* 隐藏初始状态下的表格 */
+        #detail-table-container {
+            display: none;
+            margin-top: 2rem;
+        }
+
+        /* CSV上传区域样式 */
+        .csv-upload-container {
+            border: 2px dashed #444;
+            border-radius: 1rem;
+            padding: 2rem;
+            text-align: center;
+            margin-bottom: 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .csv-upload-container:hover {
+            border-color: #FF6900;
+            background-color: rgba(255, 105, 0, 0.1);
+        }
+
+        /* 饼图图例样式 */
+        .echarts-tooltip {
+            background-color: rgba(0,0,0,0.7) !important;
+            border: 1px solid #333 !important;
+            border-radius: 4px !important;
+            padding: 10px !important;
+            color: white !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+    <header class="mb-8 text-center animate-on-scroll">
+        <h1 class="text-6xl font-bold mb-2 highlight"><i class="fas fa-chart-line mr-2"></i>小红书评论区分析报告</h1>
+        <h2 class="text-xl text-gray-400 font-semibold">Xiaohongshu Comments Analysis Dashboard</h2>
+    </header>
+
+    <!-- CSV文件上传区域 -->
+    <div class="csv-upload-container animate-on-scroll" id="csv-upload">
+        <i class="fas fa-file-csv fa-4x highlight mb-4"></i>
+        <h3 class="text-2xl font-bold mb-2">导入CSV文件</h3>
+        <p class="text-gray-400">点击或拖拽CSV文件到此处</p>
+        <input type="file" id="csv-file-input" accept=".csv" multiple style="display: none;">
+        <div class="upload-btn mt-4">
+            <i class="fas fa-upload mr-2"></i>选择文件
+        </div>
+    </div>
+
+    <!-- Tab导航 -->
+    <div class="tab-container animate-on-scroll" id="tab-container">
+        <!-- Tab会根据上传的CSV文件动态生成 -->
+    </div>
+
+    <!-- Tab内容区域 -->
+    <div id="tab-content-container">
+        <!-- Tab内容会根据上传的CSV文件动态生成 -->
+    </div>
+
+    <!-- 数据明细表格 -->
+    <div class="main-card p-6 animate-on-scroll" id="detail-table-container">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-3xl font-bold"><i class="fas fa-table mr-2 highlight"></i>数据明细</h2>
+            <button id="close-table" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded">
+                <i class="fas fa-times mr-2"></i>关闭
+            </button>
+        </div>
+        <table id="detail-table" class="display" style="width:100%"></table>
+    </div>
+
+    <!-- 重置图表按钮 -->
+    <div class="text-center my-4" style="display: none;" id="resize-charts-container">
+        <button id="resize-charts" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded">
+            <i class="fas fa-sync mr-2"></i>重新调整图表
+        </button>
+    </div>
+
+    <footer class="text-center py-8 text-gray-500 animate-on-scroll">
+        <p>© 2024 小红书评论区分析工具 | 数据更新时间: <span id="update-time">-</span></p>
+    </footer>
+
+    <script>
+        // 全局变量
+        let allDataSets = {};
+        let currentTabId = null;
+        let charts = {};
+
+        // CSV文件上传处理
+        document.querySelector('.csv-upload-container').addEventListener('click', function() {
+            document.getElementById('csv-file-input').click();
+        });
+
+        document.getElementById('csv-file-input').addEventListener('change', handleFileUpload);
+
+        function handleFileUpload(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+
+            // 隐藏上传区域
+            document.getElementById('csv-upload').style.display = 'none';
+
+            // 显示重置图表按钮
+            document.getElementById('resize-charts-container').style.display = 'block';
+
+            // 处理每个CSV文件
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const reader = new FileReader();
+
+                reader.onload = function(e) {
+                    // 使用PapaParse解析CSV
+                    Papa.parse(e.target.result, {
+                        header: true,
+                        dynamicTyping: true,
+                        complete: function(results) {
+                            const fileName = file.name.replace('.csv', '');
+                            allDataSets[fileName] = results.data;
+
+                            // 创建Tab
+                            createTab(fileName);
+
+                            // 如果是第一个文件，默认显示它
+                            if (i === 0) {
+                                activateTab(fileName);
+                            }
+                        },
+                        error: function(error) {
+                            console.error('CSV解析错误:', error);
+                            alert('CSV文件解析失败，请检查文件格式。');
+                        }
+                    });
+                };
+
+                reader.readAsText(file);
+            }
+        }
+
+        // 创建Tab
+        function createTab(tabId) {
+            // 创建Tab按钮
+            const tabContainer = document.getElementById('tab-container');
+            const tab = document.createElement('div');
+            tab.className = 'tab';
+            tab.textContent = tabId;
+            tab.dataset.tabId = tabId;
+            tab.addEventListener('click', function() {
+                activateTab(tabId);
+            });
+            tabContainer.appendChild(tab);
+
+            // 创建Tab内容区域
+            const tabContentContainer = document.getElementById('tab-content-container');
+            const tabContent = document.createElement('div');
+            tabContent.className = 'tab-content';
+            tabContent.id = `content-${tabId}`;
+
+            // 添加Tab内容模板
+            tabContent.innerHTML = `
+                <section class="main-card p-6 animate-on-scroll">
+                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-tachometer-alt mr-2 highlight"></i>数据概览</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mini-card-grid">
+                        <div class="mini-card p-4 animate-on-scroll">
+                            <div class="text-5xl font-bold highlight mb-2" id="keyword-${tabId}">-</div>
+                            <div class="text-sm text-gray-400">关键词</div>
+                            <div class="text-xs text-gray-500">Keyword</div>
+                        </div>
+                        <div class="mini-card p-4 animate-on-scroll">
+                            <div class="text-5xl font-bold highlight mb-2" id="total-comments-${tabId}">-</div>
+                            <div class="text-sm text-gray-400">评论总数</div>
+                            <div class="text-xs text-gray-500">Total Comments</div>
+                        </div>
+                        <div class="mini-card p-4 animate-on-scroll">
+                            <div class="text-5xl font-bold highlight mb-2" id="positive-ratio-${tabId}">-%</div>
+                            <div class="text-sm text-gray-400">正向评论占比</div>
+                            <div class="text-xs text-gray-500">Positive Comments</div>
+                        </div>
+                        <div class="mini-card p-4 animate-on-scroll">
+                            <div class="text-5xl font-bold highlight mb-2" id="avg-likes-${tabId}">-</div>
+                            <div class="text-sm text-gray-400">平均评论点赞数</div>
+                            <div class="text-xs text-gray-500">Average Likes</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="main-card p-6 mt-8 animate-on-scroll">
+                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-layer-group mr-2 highlight"></i>一级分类与二级分类占比</h2>
+                    <div class="sunburst-container" id="category-sunburst-${tabId}"></div>
+                </section>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                    <section class="main-card p-6 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-thumbs-up mr-2 highlight"></i>评论正负向分析</h2>
+                        <div class="chart-container px-4 py-2" id="sentiment-pie-${tabId}"></div>
+                    </section>
+
+                    <section class="main-card p-6 animate-on-scroll">
+                        <h2 class="text-3xl font-bold mb-6"><i class="fas fa-users mr-2 highlight"></i>用户倾向分布</h2>
+                        <div class="chart-container px-4 py-2" id="user-tendency-pie-${tabId}"></div>
+                    </section>
+                </div>
+
+                <section class="main-card p-6 mt-8 animate-on-scroll">
+                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-cloud mr-2 highlight"></i>评论关键词词云</h2>
+                    <div class="chart-container" id="comment-wordcloud-${tabId}"></div>
+                </section>
+
+                <section class="main-card p-6 mt-8 animate-on-scroll">
+                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-clock mr-2 highlight"></i>评论时间分布</h2>
+                    <div class="chart-container" id="time-heatmap-${tabId}"></div>
+                </section>
+
+                <section class="main-card p-6 mt-8 animate-on-scroll">
+                    <h2 class="text-3xl font-bold mb-6"><i class="fas fa-heart mr-2 highlight"></i>评论点赞数分析</h2>
+                    <div class="chart-container" id="likes-chart-${tabId}"></div>
+                </section>
+            `;
+
+            tabContentContainer.appendChild(tabContent);
+        }
+
+        // 激活Tab
+        function activateTab(tabId) {
+            // 更新当前TabID
+            currentTabId = tabId;
+
+            // 处理Tab按钮样式
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelector(`.tab[data-tab-id="${tabId}"]`).classList.add('active');
+
+            // 处理Tab内容显示
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`content-${tabId}`).classList.add('active');
+
+            // 处理数据和初始化图表
+            const data = allDataSets[tabId];
+            if (data) {
+                const chartData = processData(data, tabId);
+                initCharts(chartData, tabId);
+                setupScrollAnimation();
+
+                // 在初始化图表后，增加延时调整图表
+                setTimeout(() => {
+                    if (charts[tabId]) {
+                        Object.values(charts[tabId]).forEach(chart => chart.resize());
+                    }
+                }, 200);
+            }
+        }
+
+        // 处理数据
+        function processData(data, tabId) {
+            // 清理无效数据
+            data = data.filter(item =>
+                item &&
+                item["评论内容"] &&
+                typeof item["评论内容"] === 'string' &&
+                item["评论内容"].trim() !== ''
+            );
+
+            // 计算基本统计数据
+            const totalComments = data.length;
+            document.getElementById(`total-comments-${tabId}`).textContent = totalComments;
+
+            // 展示关键词
+            const keyword = data[0]?.["关键词"] || "-";
+            document.getElementById(`keyword-${tabId}`).textContent = keyword.length > 8 ?
+                keyword.substring(0, 8) + "..." : keyword;
+            document.getElementById(`keyword-${tabId}`).title = keyword;
+
+            // 计算正向评论比例
+            const positiveComments = data.filter(item =>
+                item["评论正负向"] && item["评论正负向"] === "正向"
+            ).length;
+            const positiveRatio = (positiveComments / totalComments * 100).toFixed(1);
+            document.getElementById(`positive-ratio-${tabId}`).textContent = positiveRatio + "%";
+
+            // 计算平均点赞数
+            const totalLikes = data.reduce((sum, item) => {
+                const likes = parseInt(item["评论点赞数"] || 0);
+                return sum + (isNaN(likes) ? 0 : likes);
+            }, 0);
+            const avgLikes = (totalLikes / totalComments).toFixed(1);
+            document.getElementById(`avg-likes-${tabId}`).textContent = avgLikes;
+
+            // 更新更新时间
+            const updateTime = data[0]?.["update_time"] ? data[0]["update_time"].split(" ")[0] : "-";
+            document.getElementById("update-time").textContent = updateTime;
+
+            return {
+                // 准备各图表所需数据
+                data: data,
+                categorySunburstData: prepareCategorySunburstData(data),
+                sentimentPieData: prepareSentimentPieData(data),
+                userTendencyPieData: prepareUserTendencyPieData(data),
+                wordcloudData: prepareWordcloudData(data),
+                timeHeatmapData: prepareTimeHeatmapData(data),
+                likesChartData: prepareLikesChartData(data)
+            };
+        }
+
+        // 工具函数：截断文本
+        function truncateText(text, maxLength = 8) {
+            if (!text) return '';
+            return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+        }
+
+        // 准备旭日图数据
+        function prepareCategorySunburstData(data) {
+            const categoryMap = {};
+
+            data.forEach(item => {
+                const level1 = item["一级分类"] || "未分类";
+                const level2 = item["二级分类"] || "未分类";
+
+                if (!categoryMap[level1]) {
+                    categoryMap[level1] = {};
+                }
+
+                if (!categoryMap[level1][level2]) {
+                    categoryMap[level1][level2] = {
+                        count: 0,
+                        items: []
+                    };
+                }
+
+                categoryMap[level1][level2].count++;
+                categoryMap[level1][level2].items.push(item);
+            });
+
+            // 转换为旭日图数据格式
+            const result = {
+                name: '分类',
+                children: []
+            };
+
+            for (const [level1, level2Map] of Object.entries(categoryMap)) {
+                const level1Node = {
+                    name: level1,
+                    value: Object.values(level2Map).reduce((sum, info) => sum + info.count, 0),
+                    children: []
+                };
+
+                for (const [level2, info] of Object.entries(level2Map)) {
+                    level1Node.children.push({
+                        name: level2,
+                        value: info.count,
+                        itemData: info.items, // 存储对应的原始数据
+                        fullName: level2 // 存储完整名称，用于工具提示
+                    });
+                }
+
+                result.children.push(level1Node);
+            }
+
+            return result;
+        }
+
+        // 准备正负向饼图数据
+        function prepareSentimentPieData(data) {
+            const sentimentCount = {};
+            const sentimentItems = {};
+
+            data.forEach(item => {
+                const sentiment = item["评论正负向"] || "未知";
+
+                if (!sentimentCount[sentiment]) {
+                    sentimentCount[sentiment] = 0;
+                    sentimentItems[sentiment] = [];
+                }
+
+                sentimentCount[sentiment]++;
+                sentimentItems[sentiment].push(item);
+            });
+
+            return Object.entries(sentimentCount).map(([name, value]) => ({
+                name,
+                value,
+                itemData: sentimentItems[name] // 存储对应的原始数据
+            }));
+        }
+
+        // 准备用户倾向饼图数据
+        function prepareUserTendencyPieData(data) {
+            const tendencyCount = {};
+            const tendencyItems = {};
+
+            data.forEach(item => {
+                const tendency = item["用户倾向"] || "未知";
+
+                if (!tendencyCount[tendency]) {
+                    tendencyCount[tendency] = 0;
+                    tendencyItems[tendency] = [];
+                }
+
+                tendencyCount[tendency]++;
+                tendencyItems[tendency].push(item);
+            });
+
+            return Object.entries(tendencyCount).map(([name, value]) => ({
+                name,
+                value,
+                itemData: tendencyItems[name] // 存储对应的原始数据
+            }));
+        }
+
+        // 准备词云数据
+        function prepareWordcloudData(data) {
+            // 合并所有评论内容
+            let allComments = data.map(item => item["评论内容"] || "").join(" ");
+
+            // 常用停用词
+            const stopWords = ["的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一", "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这"];
+
+            // 使用nodejieba进行分词
+            let words = [];
+            try {
+                if (window.nodejieba) {
+                    words = window.nodejieba.cut(allComments);
+                } else {
+                    // 简易分词 (备选方案)
+                    words = allComments.split(/[\s,.!?;，。！？；、]+/);
+                }
+            } catch (e) {
+                console.error('分词失败，使用备选方案:', e);
+                // 备选方案
+                words = allComments.split(/[\s,.!?;，。！？；、]+/);
+            }
+
+            // 过滤停用词并计数
+            const wordCount = {};
+            words.forEach(word => {
+                if (word.length > 1 && !stopWords.includes(word)) {
+                    if (!wordCount[word]) {
+                        wordCount[word] = 0;
+                    }
+                    wordCount[word]++;
+                }
+            });
+
+            return Object.entries(wordCount)
+                .map(([name, value]) => ({ name, value }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 100); // 只取前100个词
+        }
+
+        // 准备时间热力图数据
+        function prepareTimeHeatmapData(data) {
+            const hourCount = Array(24).fill(0);
+            const hourItems = Array(24).fill().map(() => []);
+
+            data.forEach(item => {
+                if (item["评论时间"]) {
+                    try {
+                        const timePart = item["评论时间"].split(" ")[1];
+                        const hour = parseInt(timePart.split(":")[0], 10);
+                        if (!isNaN(hour) && hour >= 0 && hour < 24) {
+                            hourCount[hour]++;
+                            hourItems[hour].push(item);
+                        }
+                    } catch (e) {
+                        console.error("Error parsing time: ", item["评论时间"]);
+                    }
+                }
+            });
+
+            return hourCount.map((value, index) => [
+                index,
+                0,
+                value,
+                hourItems[index] // 存储对应的原始数据
+            ]);
+        }
+
+        // 准备点赞数分布图数据
+        function prepareLikesChartData(data) {
+            const likesDistribution = {};
+            const likesItems = {};
+
+            for (let i = 0; i <= 9; i++) {
+                likesDistribution[i.toString()] = 0;
+                likesItems[i.toString()] = [];
+            }
+            likesDistribution["10+"] = 0;
+            likesItems["10+"] = [];
+
+            data.forEach(item => {
+                const likes = parseInt(item["评论点赞数"] || 0);
+                const bucket = likes >= 10 ? "10+" : likes.toString();
+
+                likesDistribution[bucket]++;
+                likesItems[bucket].push(item);
+            });
+
+            // 转换为有序数组
+            const ordered = [];
+            for (let i = 0; i <= 9; i++) {
+                ordered.push({
+                    name: i.toString(),
+                    value: likesDistribution[i.toString()],
+                    itemData: likesItems[i.toString()]
+                });
+            }
+            ordered.push({
+                name: "10+",
+                value: likesDistribution["10+"],
+                itemData: likesItems["10+"]
+            });
+
+            return ordered;
+        }
+
+        // 初始化图表
+        function initCharts(chartData, tabId) {
+            // 如果已有图表实例，先销毁
+            if (charts[tabId]) {
+                Object.values(charts[tabId]).forEach(chart => chart.dispose());
+            }
+
+            charts[tabId] = {};
+
+            // 初始化一级分类与二级分类旭日图
+            const categorySunburstChart = echarts.init(document.getElementById(`category-sunburst-${tabId}`));
+            categorySunburstChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function(params) {
+                        // 显示完整类别名称和数量
+                        const name = params.data.fullName || params.name;
+                        const percent = params.percent ? params.percent.toFixed(1) + '%' : '';
+                        return `${name}<br/>数量: ${params.value} (${percent})`;
+                    },
+                    confine: true, // 限制在图表区域内
+                    className: 'echarts-tooltip'
+                },
+                series: {
+                    type: 'sunburst',
+                    data: [chartData.categorySunburstData],
+                    radius: ['15%', '95%'], // 调整半径范围，提供更多空间
+                    itemStyle: {
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.3)'
+                    },
+                    label: {
+                        // 调整标签显示
+                        color: '#fff',
+                        textBorderColor: 'rgba(0, 0, 0, 0.5)',
+                        textBorderWidth: 2,
+                        formatter: function(param) {
+                            // 截断长文本
+                            return truncateText(param.name, 6);
+                        },
+                        rotate: 'radial', // 径向旋转标签
+                        minAngle: 9 // 只在角度大于9度时显示标签
+                    },
+                    levels: [{}, {
+                        // 第一层 - 一级分类
+                        r0: '15%',
+                        r: '45%',
+                        itemStyle: {
+                            color: '#FF6900'
+                        },
+                        label: {
+                            rotate: 'tangential' // 内圈使用切向旋转
+                        }
+                    }, {
+                        // 第二层 - 二级分类
+                        r0: '45%',
+                        r: '95%',
+                        itemStyle: {
+                            color: function(params) {
+                                // 对二级分类使用不同色调
+                                const colors = ['#FF8A3C', '#FFA064', '#FFB080', '#FFC099', '#FFCFB2'];
+                                return colors[params.dataIndex % colors.length];
+                            }
+                        },
+                        label: {
+                            align: 'left',
+                            fontSize: 12,
+                            minAngle: 10 // 只有在足够大的扇区才显示标签
+                        }
+                    }]
+                }
+            });
+
+            // 点击事件
+            categorySunburstChart.on('click', function(params) {
+                if (params.data.itemData) {
+                    showDetailTable(params.data.itemData, `${params.name} 分类数据`);
+                }
+            });
+
+            // 初始化评论正负向饼图
+            const sentimentPieChart = echarts.init(document.getElementById(`sentiment-pie-${tabId}`));
+            sentimentPieChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{a} <br/>{b}: {c} ({d}%)',
+                    className: 'echarts-tooltip'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left',
+                    top: 'center',
+                    data: chartData.sentimentPieData.map(item => item.name),
+                    textStyle: {
+                        color: '#fff',
+                        fontSize: 12
+                    },
+                    itemWidth: 10,
+                    itemHeight: 10,
+                    itemGap: 10 // 图例项之间的间距
+                },
+                series: [{
+                    name: '评论情感',
+                    type: 'pie',
+                    center: ['65%', '50%'], // 将饼图中心点向右移动
+                    radius: ['45%', '75%'], // 增加半径
+                    avoidLabelOverlap: true, // 避免标签重叠
+                    itemStyle: {
+                        borderRadius: 10,
+                        borderColor: '#1a1a1a',
+                        borderWidth: 2
+                    },
+                    label: {
+                        show: true,
+                        position: 'outside', // 标签放在外部
+                        formatter: '{b}\n{d}%', // 显示名称和百分比
+                        color: '#fff',
+                        fontSize: 12,
+                        lineHeight: 16
+                    },
+                    emphasis: {
+                        label: {
+                            show: true,
+                            fontSize: '16',
+                            fontWeight: 'bold',
+                            color: '#fff'
+                        },
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowOffsetX: 0,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    },
+                    labelLine: {
+                        show: true, // 显示引导线
+                        length: 10, // 第一段引导线长度
+                        length2: 15 // 第二段引导线长度
+                    },
+                    data: chartData.sentimentPieData,
+                    color: ['#FF6900', '#00AEEF', '#888888', '#4CAF50', '#E91E63', '#FFEB3B']
+                }]
+            });
+
+            // 点击事件
+            sentimentPieChart.on('click', function(params) {
+                if (params.data.itemData) {
+                    showDetailTable(params.data.itemData, `${params.name} 评论数据`);
+                }
+            });
+
+            // 初始化用户倾向饼图
+            const userTendencyPieChart = echarts.init(document.getElementById(`user-tendency-pie-${tabId}`));
+            userTendencyPieChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{a} <br/>{b}: {c} ({d}%)',
+                    className: 'echarts-tooltip'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left',
+                    top: 'center',
+                    data: chartData.userTendencyPieData.map(item => item.name),
+                    textStyle: {
+                        color: '#fff',
+                        fontSize: 12
+                    },
+                    itemWidth: 10,
+                    itemHeight: 10,
+                    itemGap: 10 // 图例项之间的间距
+                },
+                series: [{
+                    name: '用户倾向',
+                    type: 'pie',
+                    center: ['65%', '50%'], // 将饼图中心点向右移动
+                    radius: ['45%', '75%'], // 增加半径
+                    avoidLabelOverlap: true, // 避免标签重叠
+                    itemStyle: {
+                        borderRadius: 10,
+                        borderColor: '#1a1a1a',
+                        borderWidth: 2
+                    },
+                    label: {
+                        show: true,
+                        position: 'outside', // 标签放在外部
+                        formatter: '{b}\n{d}%', // 显示名称和百分比
+                        color: '#fff',
+                        fontSize: 12,
+                        lineHeight: 16,
+                        overflow: 'truncate', // 截断标签
+                        width: 60 // 标签宽度限制
+                    },
+                    emphasis: {
+                        label: {
+                            show: true,
+                            fontSize: '16',
+                            fontWeight: 'bold',
+                            color: '#fff'
+                        },
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowOffsetX: 0,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    },
+                    labelLine: {
+                        show: true, // 显示引导线
+                        length: 10, // 第一段引导线长度
+                        length2: 15 // 第二段引导线长度
+                    },
+                    data: chartData.userTendencyPieData,
+                    color: ['#FF6900', '#FF9248', '#FFB080', '#00AEEF', '#48C6F0', '#888888', '#FFC107', '#4CAF50']
+                }]
+            });
+
+            // 点击事件
+            userTendencyPieChart.on('click', function(params) {
+                if (params.data.itemData) {
+                    showDetailTable(params.data.itemData, `${params.name} 倾向数据`);
+                }
+            });
+
+            // 初始化评论词云
+            const commentWordcloudChart = echarts.init(document.getElementById(`comment-wordcloud-${tabId}`));
+            commentWordcloudChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    show: true,
+                    formatter: function(params) {
+                        return params.data.name + ': ' + params.data.value;
+                    },
+                    className: 'echarts-tooltip'
+                },
+                series: [{
+                    type: 'wordCloud',
+                    shape: 'circle',
+                    keepAspect: true,
+                    left: 'center',
+                    top: 'center',
+                    width: '90%',
+                    height: '90%',
+                    right: null,
+                    bottom: null,
+                    sizeRange: [12, 60],
+                    rotationRange: [0, 0],
+                    rotationStep: 45,
+                    gridSize: 8,
+                    drawOutOfBound: false,
+                    textStyle: {
+                        fontFamily: 'sans-serif',
+                        fontWeight: 'bold',
+                        color: function() {
+                            // 词云颜色渐变
+                            return 'rgb(' + [
+                                Math.round(Math.random() * 155) + 100,
+                                Math.round(Math.random() * 50),
+                                Math.round(Math.random() * 50)
+                            ].join(',') + ')';
+                        }
+                    },
+                    emphasis: {
+                        textStyle: {
+                            shadowBlur: 10,
+                            shadowColor: '#FF6900'
+                        }
+                    },
+                    data: chartData.wordcloudData
+                }]
+            });
+
+            // 初始化评论时间热力图
+            const timeHeatmapChart = echarts.init(document.getElementById(`time-heatmap-${tabId}`));
+            const hours = [...Array(24).keys()].map(i => i + '时');
+
+            timeHeatmapChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    position: 'top',
+                    formatter: function (params) {
+                        return params.value[0] + '时: ' + params.value[2] + '条评论';
+                    },
+                    className: 'echarts-tooltip'
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: hours,
+                    splitArea: {
+                        show: true
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#666'
+                        }
+                    },
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                yAxis: {
+                    type: 'category',
+                    data: ['评论分布'],
+                    splitArea: {
+                        show: true
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#666'
+                        }
+                    },
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                visualMap: {
+                    min: 0,
+                    max: Math.max(...chartData.timeHeatmapData.map(item => item[2])) || 10,
+                    calculable: true,
+                    orient: 'horizontal',
+                    left: 'center',
+                    bottom: '0%',
+                    textStyle: {
+                        color: '#fff'
+                    },
+                    inRange: {
+                        color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+                    }
+                },
+                series: [{
+                    name: '评论时间',
+                    type: 'heatmap',
+                    data: chartData.timeHeatmapData.map(item => [item[0], item[1], item[2]]), // 不包含原始数据
+                    label: {
+                        show: true,
+                        color: '#fff'
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    }
+                }]
+            });
+
+            // 点击事件
+            timeHeatmapChart.on('click', function(params) {
+                const index = params.value[0];
+                const itemData = chartData.timeHeatmapData[index][3]; // 获取保存的原始数据
+                if (itemData && itemData.length) {
+                    showDetailTable(itemData, `${index}时 评论数据`);
+                }
+            });
+
+            // 初始化点赞数分布图
+            const likesChart = echarts.init(document.getElementById(`likes-chart-${tabId}`));
+            likesChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    },
+                    className: 'echarts-tooltip'
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: chartData.likesChartData.map(item => item.name),
+                    axisLine: {
+                        lineStyle: {
+                            color: '#666'
+                        }
+                    },
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '评论数',
+                    axisLine: {
+                        lineStyle: {
+                            color: '#666'
+                        }
+                    },
+                    axisLabel: {
+                        color: '#fff'
+                    },
+                    nameTextStyle: {
+                        color: '#fff'
+                    }
+                },
+                series: [{
+                    name: '数量',
+                    type: 'bar',
+                    data: chartData.likesChartData.map(item => ({
+                        value: item.value,
+                        name: item.name,
+                        itemData: item.itemData
+                    })),
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#FF6900' },
+                            { offset: 1, color: '#FFB080' }
+                        ])
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: '#FF9248' },
+                                { offset: 1, color: '#FFC8A8' }
+                            ])
+                        }
+                    },
+                    label: {
+                        show: true,
+                        position: 'top',
+                        color: '#fff'
+                    }
+                }]
+            });
+
+            // 点击事件
+            likesChart.on('click', function(params) {
+                if (params.data.itemData) {
+                    showDetailTable(params.data.itemData, `${params.data.name}点赞 评论数据`);
+                }
+            });
+
+            // 保存图表实例
+            charts[tabId] = {
+                categorySunburstChart,
+                sentimentPieChart,
+                userTendencyPieChart,
+                commentWordcloudChart,
+                timeHeatmapChart,
+                likesChart
+            };
+        }
+
+        // 显示数据明细表格
+        function showDetailTable(data, title) {
+            const tableContainer = document.getElementById('detail-table-container');
+            const tableTitle = tableContainer.querySelector('h2');
+            tableTitle.innerHTML = `<i class="fas fa-table mr-2 highlight"></i>${title}`;
+
+            // 显示表格容器
+            tableContainer.style.display = 'block';
+
+            // 滚动到表格位置
+            tableContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            // 如果已存在表格实例，先销毁
+            if ($.fn.DataTable.isDataTable('#detail-table')) {
+                $('#detail-table').DataTable().destroy();
+            }
+
+            // 获取表格列
+            const columns = [];
+            if (data.length > 0) {
+                // 根据数据中的关键字段选择要展示的列
+                const keyCols = ["评论内容", "评论正负向", "用户倾向", "一级分类", "二级分类", "评论时间", "评论点赞数", "评论用户"];
+
+                keyCols.forEach(col => {
+                    if (data[0][col] !== undefined) {
+                        columns.push({
+                            title: col,
+                            data: col
+                        });
+                    }
+                });
+            }
+
+            // 初始化DataTable
+            $('#detail-table').DataTable({
+                data: data,
+                columns: columns,
+                responsive: true,
+                language: {
+                    "sProcessing": "处理中...",
+                    "sLengthMenu": "显示 _MENU_ 条结果",
+                    "sZeroRecords": "没有匹配结果",
+                    "sInfo": "显示第 _START_ 至 _END_ 条结果，共 _TOTAL_ 条",
+                    "sInfoEmpty": "显示第 0 至 0 条结果，共 0 条",
+                    "sInfoFiltered": "(由 _MAX_ 条结果过滤)",
+                    "sInfoPostFix": "",
+                    "sSearch": "搜索:",
+                    "sUrl": "",
+                    "sEmptyTable": "表中数据为空",
+                    "sLoadingRecords": "载入中...",
+                    "sInfoThousands": ",",
+                    "oPaginate": {
+                        "sFirst": "首页",
+                        "sPrevious": "上页",
+                        "sNext": "下页",
+                        "sLast": "末页"
+                    },
+                    "oAria": {
+                        "sSortAscending": ": 以升序排列此列",
+                        "sSortDescending": ": 以降序排列此列"
+                    }
+                },
+                pageLength: 10,
+                scrollX: true,
+                order: [] // 不进行默认排序
+            });
+        }
+
+        // 关闭详情表格
+        document.getElementById('close-table').addEventListener('click', function() {
+            document.getElementById('detail-table-container').style.display = 'none';
+        });
+
+        // 重置图表大小按钮
+        document.getElementById('resize-charts').addEventListener('click', function() {
+            if (currentTabId && charts[currentTabId]) {
+                Object.values(charts[currentTabId]).forEach(chart => chart.resize());
+            }
+        });
+
+        // 防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function() {
+                const context = this;
+                const args = arguments;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
+        }
+
+        // 处理滚动动画
+        function setupScrollAnimation() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('animate-visible');
+                    }
+                });
+            }, {
+                threshold: 0.1
+            });
+
+            document.querySelectorAll('.animate-on-scroll').forEach(element => {
+                observer.observe(element);
+            });
+        }
+
+        // 监听窗口大小变化，自动调整图表大小
+        window.addEventListener('resize', debounce(function() {
+            if (currentTabId && charts[currentTabId]) {
+                Object.values(charts[currentTabId]).forEach(chart => chart.resize());
+            }
+        }, 200));
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            setupScrollAnimation();
+        });
+    </script>
+</body>
+</html>
